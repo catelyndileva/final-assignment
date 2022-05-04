@@ -1,0 +1,105 @@
+---
+title: "Charts from Consumer Complaints"
+author: "Catelyn Di Leva"
+date: "4/30/2022"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: scroll
+---
+
+```{r,include=FALSE}
+# Load Libraries
+library(tidyverse)
+library(ggplot2)
+library(tigris)
+library(tmap)
+library(gtsummary)
+# Load Data
+complaints <- readRDS("complaints.rds")
+colnames(complaints)[9] <- "STUSPS"
+us_geo <- tigris::states(class = "sf")
+
+# First Trend
+complaints_summary_1 <- complaints %>%
+  group_by(STUSPS) %>%
+  summarise(count=n())
+HelperShapeObject <- left_join(us_geo, complaints_summary_1, by = c("STUSPS"))
+contiguous_states <- HelperShapeObject %>% 
+  filter(REGION != 9) %>% 
+  shift_geometry()
+
+# Second Trend
+complaints_summary_2 <- complaints %>% 
+    group_by(company) %>% 
+    summarise(n_complaints=n()) %>% 
+    arrange(desc(n_complaints)) %>% head(10)
+
+# Third Trend
+complaints_summary_3 <- complaints %>% 
+  filter(company %in% head(complaints_summary_2$company,3))
+```
+
+Column 
+-------------------------------------
+
+### Chart 1: Number of Complaints per State
+
+```{r,cache=TRUE}
+tm_shape(contiguous_states) +
+  tm_polygons("count", id = "Name")
+```
+
+### Chart 2: Top 10 companies with the highest complaints
+```{r,fig.width=8,fig.height=4}
+ggplot(complaints_summary_2,aes(y=reorder(company,n_complaints),x=n_complaints,fill=company))+geom_col(show.legend = F)+xlab("Number of Complaints")+ylab("")
+```
+
+### Chart 3: Table of top 3 companies with the highest complaints
+```{r}
+complaints_summary_3 %>% dplyr::select("company","yy_received","product","consumer_consent_provided") %>% 
+    tbl_summary(by= company, 
+                statistic = list(
+                  all_continuous() ~ "{mean}+/-{sd}; {median} ({min} - {max})",
+                  all_categorical() ~ "{n}/{N} ({p}%)"), 
+                digits = all_continuous() ~ 1)  %>%
+    add_overall() %>%
+    add_stat_label() %>%
+    bold_labels() %>%
+    gtsummary::as_flex_table()
+```
+
+### Chart 4: Line plot of complaints count over time for the company with the highest compaints
+```{r,fig.width=8,fig.height=4}
+complaints_summary_4 <- complaints %>% 
+  filter(company=="Experian Information Solutions Inc.") %>% 
+  group_by(company,mm_yy_sent_to_company) %>% 
+  summarise(n_complaints=n()) %>% head(10)
+
+ggplot(complaints_summary_4,aes(x=mm_yy_sent_to_company,n_complaints))+
+  geom_point(aes(color = company, alpha = 1), size = 4,stat='summary', fun.y=sum) +
+  geom_path(aes(group=company,color = company, alpha = 1), size = 2) + theme(legend.position = "none")+
+  xlab("")+ylab("Number of Complaints")
+```
+
+Column {.tabset}
+-------------------------------------
+
+### About
+
+**Description**
+
+The *Complaints* dataset consists of 393,050 observations and 22 variables. The dataset includes complaints reported in 2020 for consumer financial services companies. Each complaint has been recorded with the date received, product, sub-product, issue, among other variables.
+
+In order to investigate the *Complaints* dataset, I first wanted to visualize the total number of complaints per state (**Chart 1**). I was able to see that total number of complaints received by companies in Florida were the highest among other states with 50,449 complaints. 
+
+Next, I wanted to identify the top 10 companies with the highest complaints, so I calculated the total number of complaints per company, and ranked them in a descending order (**Chart 2**). Experian Information Solutions Inc was the company with the highest complaints with 81,264 coming from 58 states. 
+
+Furthermore, I wanted to understand the distribution of complaints among different products in the companies with the highest complaints, so I generated a table of the top 3 companies with the highest complaints (Experian Information Solutions Inc., TRANSUNION INTERMEDIATE HOLDINGS, INC., and EQUIFAX, INC.) which had total complaints of 81264, 77386, 70075 respectively (**Chart 3**). This table shows that most complaints for these three companies was for the following product: Credit reporting, credit repair services, or other personal consumer reports. 
+
+Finally, I was interested in tracking the number of complaints in the company with the highest number of complaints (Experian Information Solutions Inc.) over time, I generated a line plot showing the total number of complaints per month (**Chart 4**). I can clearly see that the number of complaints kept going up every month of the year.
+
+**Caveats**
+
+While **Chart 3** showed that Credit reporting, credit repair services, or other personal consumer reports was the product with the highest complaints, investigating the specific sub-product within that category is still necessary to identify the main source of complaints and come up with strategies to fix the issue. Another caveat of my analysis is that **Chart 4** showed the number of complaints over time. However, I had to remove the month of January 2021 because it was incomplete and the data wouldn't represent the whole month.
+
+
